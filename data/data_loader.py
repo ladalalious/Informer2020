@@ -53,11 +53,12 @@ class Dataset_ETT_hour(Dataset):
         border2 = border2s[self.set_type]
         
         if self.features=='M' or self.features=='MS':
+            #把列名拿到手
             cols_data = df_raw.columns[1:]
             df_data = df_raw[cols_data]
         elif self.features=='S':
             df_data = df_raw[[self.target]]
-
+        #对数据进行标准化
         if self.scale:
             train_data = df_data[border1s[0]:border2s[0]]
             self.scaler.fit(train_data.values)
@@ -374,6 +375,106 @@ class Dataset_Pred(Dataset):
     
     def __len__(self):
         return len(self.data_x) - self.seq_len + 1
+
+    def inverse_transform(self, data):
+        return self.scaler.inverse_transform(data)
+
+
+class Dataset_Test(Dataset):
+    def __init__(self, root_path, flag='train', size=None,
+                 features='S', data_path='ETTh1.csv',
+                 target='OT', scale=True, inverse=False, timeenc=0, freq='h', cols=None):
+        # size [seq_len, label_len, pred_len]
+        # info
+        if size == None:
+            self.seq_len = 24 * 4 * 4
+            self.label_len = 24 * 4
+            self.pred_len = 24 * 4
+        else:
+            self.seq_len = size[0]
+            self.label_len = size[1]
+            self.pred_len = size[2]
+        # init
+        assert flag in ['train', 'test', 'val']
+        #不同数据集，取的边界数值不一样
+        type_map = {'train': 0, 'val': 1, 'test': 2}
+        #数据集类型
+        self.set_type = type_map[flag]
+
+        self.features = features
+        self.target = target
+        self.scale = scale
+        self.inverse = inverse
+        self.timeenc = timeenc
+        self.freq = freq
+
+        self.root_path = root_path
+        self.data_path = data_path
+        self.__read_data__()
+
+    #读取数据，确定训练集、测试集、验证集的索引范围，并进行时间编码
+    def __read_data__(self):
+        self.scaler = StandardScaler()
+        df_raw = pd.read_csv(os.path.join(self.root_path,
+                                          self.data_path))
+
+        #border1s中包含3个值，第一元素表示训练集的起始位置，第二元素表示测试集的起始位置，第三元表示验证集的起始位置
+        border1s = [0, 12 * 30 * 24 - self.seq_len, 12 * 30 * 24 + 4 * 30 * 24 - self.seq_len]
+        # border2s中包含3个值，第一元素表示训练集的终止位置，第二元素表示测试集的终止位置，第三元表示验证集的终止位置
+        border2s = [12 * 30 * 24, 12 * 30 * 24 + 4 * 30 * 24, 12 * 30 * 24 + 8 * 30 * 24]
+        border1 = border1s[self.set_type]
+        border2 = border2s[self.set_type]
+
+        #df_data根据预测类型不同取不同数据，如果是多对多或者多对一，则取所有列数据作为df_data，如果是一对一则取目标列来作为df_data
+        if self.features == 'M' or self.features == 'MS':
+            # 把列名拿到手
+            cols_data = df_raw.columns[1:]
+            df_data = df_raw[cols_data]
+        elif self.features == 'S':
+            df_data = df_raw[[self.target]]
+        # 对数据进行标准化，data是经过标准化处理的数据
+        if self.scale:
+            train_data = df_data[border1s[0]:border2s[0]]
+            self.scaler.fit(train_data.values)
+
+            data = self.scaler.transform(df_data.values)
+        else:
+            data = df_data.values
+
+        #时间信息
+        df_stamp = df_raw[['date']][border1:border2]
+        df_stamp['date'] = pd.to_datetime(df_stamp.date)
+        #提取到的时间特征，根据传入时间类型的不同，提取相应类型的特征信息，比如小时的话有四个维度信息
+        data_stamp = time_features(df_stamp, timeenc=self.timeenc, freq=self.freq)
+
+        self.data_x = data[border1:border2]
+        if self.inverse:
+            self.data_y = df_data.values[border1:border2]
+        else:
+            self.data_y = data[border1:border2]
+        self.data_stamp = data_stamp
+
+    def __getitem__(self, index):
+        #计算索引范围
+        s_begin = index
+        s_end = s_begin + self.seq_len
+        r_begin = s_end - self.label_len
+        r_end = r_begin + self.label_len + self.pred_len
+
+        #获取数据
+        seq_x = self.data_x[s_begin:s_end]
+        if self.inverse:
+            seq_y = np.concatenate(
+                [self.data_x[r_begin:r_begin + self.label_len], self.data_y[r_begin + self.label_len:r_end]], 0)
+        else:
+            seq_y = self.data_y[r_begin:r_end]
+        seq_x_mark = self.data_stamp[s_begin:s_end]
+        seq_y_mark = self.data_stamp[r_begin:r_end]
+
+        return seq_x, seq_y, seq_x_mark, seq_y_mark
+
+    def __len__(self):
+        return len(self.data_x) - self.seq_len - self.pred_len + 1
 
     def inverse_transform(self, data):
         return self.scaler.inverse_transform(data)

@@ -1,6 +1,6 @@
-from data.data_loader import Dataset_ETT_hour, Dataset_ETT_minute, Dataset_Custom, Dataset_Pred
+from data.data_loader import Dataset_ETT_hour, Dataset_ETT_minute, Dataset_Custom, Dataset_Pred, Dataset_Test
 from exp.exp_basic import Exp_Basic
-from models.model import Informer, InformerStack
+from models.model import Informer, InformerStack, Informer_Test
 
 from utils.tools import EarlyStopping, adjust_learning_rate
 from utils.metrics import metric
@@ -21,14 +21,15 @@ warnings.filterwarnings('ignore')
 class Exp_Informer(Exp_Basic):
     def __init__(self, args):
         super(Exp_Informer, self).__init__(args)
-    
+    #搭建模型
     def _build_model(self):
         model_dict = {
             'informer':Informer,
             'informerstack':InformerStack,
+            'informertest': Informer_Test,
         }
-        if self.args.model=='informer' or self.args.model=='informerstack':
-            e_layers = self.args.e_layers if self.args.model=='informer' else self.args.s_layers
+        if self.args.model=='informer' or self.args.model=='informerstack' or self.args.model=='informertest':
+            e_layers = self.args.e_layers if self.args.model=='informer' or self.args.model=='informertest' else self.args.s_layers
             model = model_dict[self.args.model](
                 self.args.enc_in,
                 self.args.dec_in, 
@@ -61,7 +62,7 @@ class Exp_Informer(Exp_Basic):
         args = self.args
 
         data_dict = {
-            'ETTh1':Dataset_ETT_hour,
+            'ETTh1':Dataset_Test,
             'ETTh2':Dataset_ETT_hour,
             'ETTm1':Dataset_ETT_minute,
             'ETTm2':Dataset_ETT_minute,
@@ -127,6 +128,7 @@ class Exp_Informer(Exp_Basic):
         vali_data, vali_loader = self._get_data(flag = 'val')
         test_data, test_loader = self._get_data(flag = 'test')
 
+        #通过将这两个路径组合在一起，得到的 path 就是一个完整的文件路径，表示存储该实验检查点的位置。这个路径将用于保存或加载模型训练过程中的检查点文件。
         path = os.path.join(self.args.checkpoints, setting)
         if not os.path.exists(path):
             os.makedirs(path)
@@ -263,7 +265,7 @@ class Exp_Informer(Exp_Basic):
         batch_x_mark = batch_x_mark.float().to(self.device)
         batch_y_mark = batch_y_mark.float().to(self.device)
 
-        # decoder input
+        # 构造解码器输入decoder input，如果padding是0，则预测的时序数据全部填充为0，反之为1，再跟作为先验知识的数据进行拼接作为decoder的输入
         if self.args.padding==0:
             dec_inp = torch.zeros([batch_y.shape[0], self.args.pred_len, batch_y.shape[-1]]).float()
         elif self.args.padding==1:

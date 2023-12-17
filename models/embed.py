@@ -30,6 +30,7 @@ class TokenEmbedding(nn.Module):
         self.tokenConv = nn.Conv1d(in_channels=c_in, out_channels=d_model, 
                                     kernel_size=3, padding=padding, padding_mode='circular')
         for m in self.modules():
+            #如果当前模块 m 是一维卷积层，就对其权重进行初始化。 Kaiming 初始化是一种常用的初始化方法，它有助于避免梯度消失或梯度爆炸问题，尤其在深度神经网络中更为有效。
             if isinstance(m, nn.Conv1d):
                 nn.init.kaiming_normal_(m.weight,mode='fan_in',nonlinearity='leaky_relu')
 
@@ -106,4 +107,20 @@ class DataEmbedding(nn.Module):
     def forward(self, x, x_mark):
         x = self.value_embedding(x) + self.position_embedding(x) + self.temporal_embedding(x_mark)
         
+        return self.dropout(x)
+
+
+class NoTimeDataEmbedding(nn.Module):
+    def __init__(self, c_in, d_model, embed_type='fixed', freq='h', dropout=0.1):
+        super(NoTimeDataEmbedding, self).__init__()
+
+        self.value_embedding = TokenEmbedding(c_in=c_in, d_model=d_model)
+        self.position_embedding = PositionalEmbedding(d_model=d_model)
+        self.temporal_embedding = TemporalEmbedding(d_model=d_model, embed_type=embed_type,freq=freq) if embed_type != 'timeF' else TimeFeatureEmbedding(d_model=d_model, embed_type=embed_type, freq=freq)
+
+        self.dropout = nn.Dropout(p=dropout)
+
+    def forward(self, x):
+        x = self.value_embedding(x) + self.position_embedding(x)
+
         return self.dropout(x)

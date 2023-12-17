@@ -35,6 +35,7 @@ class FullAttention(nn.Module):
         else:
             return (V.contiguous(), None)
 
+#计算稀疏注意力
 class ProbAttention(nn.Module):
     def __init__(self, mask_flag=True, factor=5, scale=None, attention_dropout=0.1, output_attention=False):
         super(ProbAttention, self).__init__()
@@ -51,6 +52,7 @@ class ProbAttention(nn.Module):
 
         # calculate the sampled Q_K
         K_expand = K.unsqueeze(-3).expand(B, H, L_Q, L_K, E)
+        #生成的 index_sample 张量的每一行包含了 sample_k 个在 [0, L_K) 范围内的随机整数。这些整数用于在键序列中进行采样，以构建概率采样后的键矩阵。这个操作的目的是通过随机采样的方式，降低计算复杂度，从而更高效地计算注意力机制。
         index_sample = torch.randint(L_K, (L_Q, sample_k)) # real U = U_part(factor*ln(L_k))*L_q
         K_sample = K_expand[:, :, torch.arange(L_Q).unsqueeze(1), index_sample, :]
         Q_K_sample = torch.matmul(Q.unsqueeze(-2), K_sample.transpose(-2, -1)).squeeze(-2)
@@ -86,7 +88,7 @@ class ProbAttention(nn.Module):
             scores.masked_fill_(attn_mask.mask, -np.inf)
 
         attn = torch.softmax(scores, dim=-1) # nn.Softmax(dim=-1)(scores)
-
+        #context_in是传入的V的平均值上下文，对context_in中对应的“有用的Q”的位置进行注意力权重更新
         context_in[torch.arange(B)[:, None, None],
                    torch.arange(H)[None, :, None],
                    index, :] = torch.matmul(attn, V).type_as(context_in)
@@ -160,4 +162,5 @@ class AttentionLayer(nn.Module):
             out = out.transpose(2,1).contiguous()
         out = out.view(B, L, -1)
 
+        #返回V经过全连接层的结果和注意力分数
         return self.out_projection(out), attn

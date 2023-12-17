@@ -45,6 +45,7 @@ class EncoderLayer(nn.Module):
             x, x, x,
             attn_mask = attn_mask
         )
+        #残差连接
         x = x + self.dropout(new_x)
 
         y = x = self.norm1(x)

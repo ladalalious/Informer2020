@@ -17,7 +17,7 @@ parser.add_argument('--data_path', type=str, default='ETTh1.csv', help='data fil
 parser.add_argument('--features', type=str, default='M', help='forecasting task, options:[M, S, MS]; M:multivariate predict multivariate, S:univariate predict univariate, MS:multivariate predict univariate')
 #数据标签
 parser.add_argument('--target', type=str, default='OT', help='target feature in S or MS task')
-#用于时间特征编码的频率
+#用于时间特征编码的频率，选项：[s:秒，t:分钟，h:小时，d:日，b:工作日，w:周，m:月]
 parser.add_argument('--freq', type=str, default='h', help='freq for time features encoding, options:[s:secondly, t:minutely, h:hourly, d:daily, b:business days, w:weekly, m:monthly], you can also use more detailed freq like 15min or 3h')
 #在深度学习中，特别是在模型训练过程中，"checkpoints" 是指在训练过程中定期保存模型的状态，包括模型的权重、优化器的状态以及其他必要的信息。这样做的目的是为了在训练过程中发生意外中断（例如计算机崩溃、断电等）时，能够从最后一个保存的 checkpoint 处继续训练，而不需要重新开始整个训练过程。
 parser.add_argument('--checkpoints', type=str, default='./checkpoints/', help='location of model checkpoints')
@@ -49,7 +49,7 @@ parser.add_argument('--padding', type=int, default=0, help='padding type')
 parser.add_argument('--distil', action='store_false', help='whether to use distilling in encoder, using this argument means not using distilling', default=True)
 parser.add_argument('--dropout', type=float, default=0.05, help='dropout')
 parser.add_argument('--attn', type=str, default='prob', help='attention used in encoder, options:[prob, full]')
-#编码方式
+#时间编码方式
 parser.add_argument('--embed', type=str, default='timeF', help='time features encoding, options:[timeF, fixed, learned]')
 parser.add_argument('--activation', type=str, default='gelu',help='activation')
 parser.add_argument('--output_attention', action='store_true', help='whether to output attention in ecoder')
@@ -92,6 +92,7 @@ data_parser = {
     'WTH':{'data':'WTH.csv','T':'WetBulbCelsius','M':[12,12,12],'S':[1,1,1],'MS':[12,12,1]},
     'ECL':{'data':'ECL.csv','T':'MT_320','M':[321,321,321],'S':[1,1,1],'MS':[321,321,1]},
     'Solar':{'data':'solar_AL.csv','T':'POWER_136','M':[137,137,137],'S':[1,1,1],'MS':[137,137,1]},
+    'FD001':{'data':'FD001.csv','T':'RUL','M':[137,137,137],'S':[1,1,1],'MS':[137,137,1]},
 }
 if args.data in data_parser.keys():
     data_info = data_parser[args.data]
@@ -106,15 +107,16 @@ args.freq = args.freq[-1:]
 print('Args in experiment:')
 print(args)
 
+#初始化一个实验对象
 Exp = Exp_Informer
 
 for ii in range(args.itr):
-    # setting record of experiments
+    # setting record of experiments用于设置记录实验参数的字符串
     setting = '{}_{}_ft{}_sl{}_ll{}_pl{}_dm{}_nh{}_el{}_dl{}_df{}_at{}_fc{}_eb{}_dt{}_mx{}_{}_{}'.format(args.model, args.data, args.features, 
                 args.seq_len, args.label_len, args.pred_len,
                 args.d_model, args.n_heads, args.e_layers, args.d_layers, args.d_ff, args.attn, args.factor, 
                 args.embed, args.distil, args.mix, args.des, ii)
-
+    #传入实验参数
     exp = Exp(args) # set experiments
     print('>>>>>>>start training : {}>>>>>>>>>>>>>>>>>>>>>>>>>>'.format(setting))
     exp.train(setting)

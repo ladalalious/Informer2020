@@ -134,6 +134,7 @@ def time_features(dates, timeenc=1, freq='h'):
     *minute returns a number from 0-3 corresponding to the 15 minute period it falls into.
     """
     if timeenc==0:
+        #提取传入dates的月份、日、周末等特征到新的数据列
         dates['month'] = dates.date.apply(lambda row:row.month,1)
         dates['day'] = dates.date.apply(lambda row:row.day,1)
         dates['weekday'] = dates.date.apply(lambda row:row.weekday(),1)
@@ -148,4 +149,5 @@ def time_features(dates, timeenc=1, freq='h'):
         return dates[freq_map[freq.lower()]].values
     if timeenc==1:
         dates = pd.to_datetime(dates.date.values)
+        #np.vstack 是 NumPy 库中的一个函数，用于在垂直方向（沿着行的方向）堆叠（叠加）数组。具体来说，它将一系列的输入数组按垂直方向堆叠在一起，生成一个新的数组。
         return np.vstack([feat(dates) for feat in time_features_from_frequency_str(freq)]).transpose(1,0)
