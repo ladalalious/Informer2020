@@ -18,11 +18,13 @@ import time
 import warnings
 warnings.filterwarnings('ignore')
 
+#实验对象
 class Exp_Informer(Exp_Basic):
     def __init__(self, args):
         super(Exp_Informer, self).__init__(args)
     #搭建模型
     def _build_model(self):
+        #
         model_dict = {
             'informer':Informer,
             'informerstack':InformerStack,
@@ -114,9 +116,9 @@ class Exp_Informer(Exp_Basic):
     def vali(self, vali_data, vali_loader, criterion):
         self.model.eval()
         total_loss = []
-        for i, (batch_x,batch_y,batch_x_mark,batch_y_mark) in enumerate(vali_loader):
-            pred, true = self._process_one_batch(
-                vali_data, batch_x, batch_y, batch_x_mark, batch_y_mark)
+        for i, (batch_x,batch_y) in enumerate(vali_loader):
+            pred, true = self._process_one_batch_noTime(
+                vali_data, batch_x, batch_y)
             loss = criterion(pred.detach().cpu(), true.detach().cpu())
             total_loss.append(loss)
         total_loss = np.average(total_loss)
@@ -150,12 +152,12 @@ class Exp_Informer(Exp_Basic):
             
             self.model.train()
             epoch_time = time.time()
-            for i, (batch_x,batch_y,batch_x_mark,batch_y_mark) in enumerate(train_loader):
+            for i, (batch_x,batch_y) in enumerate(train_loader):
                 iter_count += 1
                 
                 model_optim.zero_grad()
-                pred, true = self._process_one_batch(
-                    train_data, batch_x, batch_y, batch_x_mark, batch_y_mark)
+                pred, true = self._process_one_batch_noTime(
+                    train_data, batch_x, batch_y)
                 loss = criterion(pred, true)
                 train_loss.append(loss.item())
                 
@@ -202,9 +204,9 @@ class Exp_Informer(Exp_Basic):
         preds = []
         trues = []
         
-        for i, (batch_x,batch_y,batch_x_mark,batch_y_mark) in enumerate(test_loader):
-            pred, true = self._process_one_batch(
-                test_data, batch_x, batch_y, batch_x_mark, batch_y_mark)
+        for i, (batch_x,batch_y) in enumerate(test_loader):
+            pred, true = self._process_one_batch_noTime(
+                test_data, batch_x, batch_y)
             preds.append(pred.detach().cpu().numpy())
             trues.append(true.detach().cpu().numpy())
 
@@ -241,9 +243,9 @@ class Exp_Informer(Exp_Basic):
         
         preds = []
         
-        for i, (batch_x,batch_y,batch_x_mark,batch_y_mark) in enumerate(pred_loader):
-            pred, true = self._process_one_batch(
-                pred_data, batch_x, batch_y, batch_x_mark, batch_y_mark)
+        for i, (batch_x,batch_y) in enumerate(pred_loader):
+            pred, true = self._process_one_batch_noTime(
+                pred_data, batch_x, batch_y)
             preds.append(pred.detach().cpu().numpy())
 
         preds = np.array(preds)
@@ -283,6 +285,37 @@ class Exp_Informer(Exp_Basic):
                 outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)[0]
             else:
                 outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
+        if self.args.inverse:
+            outputs = dataset_object.inverse_transform(outputs)
+        f_dim = -1 if self.args.features=='MS' else 0
+        batch_y = batch_y[:,-self.args.pred_len:,f_dim:].to(self.device)
+
+        return outputs, batch_y
+
+    def _process_one_batch_noTime(self, dataset_object, batch_x, batch_y):
+        batch_x = batch_x.float().to(self.device)
+        batch_y = batch_y.float()
+
+
+
+        # 构造解码器输入decoder input，如果padding是0，则预测的时序数据全部填充为0，反之为1，再跟作为先验知识的数据进行拼接作为decoder的输入
+        if self.args.padding==0:
+            dec_inp = torch.zeros([batch_y.shape[0], self.args.pred_len, batch_y.shape[-1]]).float()
+        elif self.args.padding==1:
+            dec_inp = torch.ones([batch_y.shape[0], self.args.pred_len, batch_y.shape[-1]]).float()
+        dec_inp = torch.cat([batch_y[:,:self.args.label_len,:], dec_inp], dim=1).float().to(self.device)
+        # encoder - decoder
+        if self.args.use_amp:
+            with torch.cuda.amp.autocast():
+                if self.args.output_attention:
+                    outputs = self.model(batch_x, dec_inp)[0]
+                else:
+                    outputs = self.model(batch_x, dec_inp)
+        else:
+            if self.args.output_attention:
+                outputs = self.model(batch_x, dec_inp)[0]
+            else:
+                outputs = self.model(batch_x, dec_inp)
         if self.args.inverse:
             outputs = dataset_object.inverse_transform(outputs)
         f_dim = -1 if self.args.features=='MS' else 0

@@ -31,10 +31,10 @@ parser.add_argument('--pred_len', type=int, default=24, help='prediction sequenc
 # 在 Informer 模型的解码器（decoder）中，关于输入的说明是指在解码器的输入中，首先包含了时间序列中的标签部分（label_len），然后是零填充序列（zero padding series）用于表示预测的部分（pred_len）。
 
 #encoder输入的维度
-parser.add_argument('--enc_in', type=int, default=7, help='encoder input size')
-parser.add_argument('--dec_in', type=int, default=7, help='decoder input size')
+parser.add_argument('--enc_in', type=int, default=6, help='encoder input size')
+parser.add_argument('--dec_in', type=int, default=6, help='decoder input size')
 #输出的维度
-parser.add_argument('--c_out', type=int, default=7, help='output size')
+parser.add_argument('--c_out', type=int, default=1, help='output size')
 #隐藏层的维度
 parser.add_argument('--d_model', type=int, default=512, help='dimension of model')
 #注意力头数
@@ -85,7 +85,7 @@ if args.use_gpu and args.use_multi_gpu:
     args.gpu = args.device_ids[0]
 
 data_parser = {
-    'ETTh1':{'data':'ETTh1.csv','T':'OT','M':[7,7,7],'S':[1,1,1],'MS':[7,7,1]},
+    'ETTh1':{'data':'ETTh1.csv','T':'OT','M':[7,7,7],'S':[1,1,1],'MS':[6,6,1]},
     'ETTh2':{'data':'ETTh2.csv','T':'OT','M':[7,7,7],'S':[1,1,1],'MS':[7,7,1]},
     'ETTm1':{'data':'ETTm1.csv','T':'OT','M':[7,7,7],'S':[1,1,1],'MS':[7,7,1]},
     'ETTm2':{'data':'ETTm2.csv','T':'OT','M':[7,7,7],'S':[1,1,1],'MS':[7,7,1]},
