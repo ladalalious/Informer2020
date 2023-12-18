@@ -371,7 +371,9 @@ class Dataset_Pred(Dataset):
         seq_x_mark = self.data_stamp[s_begin:s_end]
         seq_y_mark = self.data_stamp[r_begin:r_end]
 
-        return seq_x, seq_y, seq_x_mark, seq_y_mark
+        # return seq_x, seq_y, seq_x_mark, seq_y_mark
+
+        return seq_x, seq_y
     
     def __len__(self):
         return len(self.data_x) - self.seq_len + 1
