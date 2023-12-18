@@ -1,4 +1,5 @@
-from data.data_loader import Dataset_ETT_hour, Dataset_ETT_minute, Dataset_Custom, Dataset_Pred, Dataset_Test
+from data.data_loader import Dataset_ETT_hour, Dataset_ETT_minute, Dataset_Custom, Dataset_Pred, Dataset_Test, \
+    Dataset_Pred_Test
 from exp.exp_basic import Exp_Basic
 from models.model import Informer, InformerStack, Informer_Test
 
@@ -6,6 +7,7 @@ from utils.tools import EarlyStopping, adjust_learning_rate
 from utils.metrics import metric
 
 import numpy as np
+import matplotlib.pyplot as plt
 
 import torch
 import torch.nn as nn
@@ -80,7 +82,7 @@ class Exp_Informer(Exp_Basic):
             shuffle_flag = False; drop_last = True; batch_size = args.batch_size; freq=args.freq
         elif flag=='pred':
             shuffle_flag = False; drop_last = False; batch_size = 1; freq=args.detail_freq
-            Data = Dataset_Pred
+            Data = Dataset_Pred_Test
         else:
             shuffle_flag = True; drop_last = True; batch_size = args.batch_size; freq=args.freq
         data_set = Data(
@@ -116,9 +118,9 @@ class Exp_Informer(Exp_Basic):
     def vali(self, vali_data, vali_loader, criterion):
         self.model.eval()
         total_loss = []
-        for i, (batch_x,batch_y) in enumerate(vali_loader):
+        for i, (batch_x,batch_y,batch_target) in enumerate(vali_loader):
             pred, true = self._process_one_batch_noTime(
-                vali_data, batch_x, batch_y)
+                vali_data, batch_x, batch_y,batch_target)
             loss = criterion(pred.detach().cpu(), true.detach().cpu())
             total_loss.append(loss)
         total_loss = np.average(total_loss)
@@ -152,12 +154,12 @@ class Exp_Informer(Exp_Basic):
             
             self.model.train()
             epoch_time = time.time()
-            for i, (batch_x,batch_y) in enumerate(train_loader):
+            for i, (batch_x,batch_y,batch_target) in enumerate(train_loader):
                 iter_count += 1
                 
                 model_optim.zero_grad()
                 pred, true = self._process_one_batch_noTime(
-                    train_data, batch_x, batch_y)
+                    train_data, batch_x, batch_y,batch_target)
                 loss = criterion(pred, true)
                 train_loss.append(loss.item())
                 
@@ -204,9 +206,9 @@ class Exp_Informer(Exp_Basic):
         preds = []
         trues = []
         
-        for i, (batch_x,batch_y) in enumerate(test_loader):
+        for i, (batch_x,batch_y,batch_target) in enumerate(test_loader):
             pred, true = self._process_one_batch_noTime(
-                test_data, batch_x, batch_y)
+                test_data, batch_x, batch_y,batch_target)
             preds.append(pred.detach().cpu().numpy())
             trues.append(true.detach().cpu().numpy())
 
@@ -242,14 +244,27 @@ class Exp_Informer(Exp_Basic):
         self.model.eval()
         
         preds = []
+        trues=[]
         
-        for i, (batch_x,batch_y) in enumerate(pred_loader):
+        for i, (batch_x,batch_y,batch_target) in enumerate(pred_loader):
             pred, true = self._process_one_batch_noTime(
-                pred_data, batch_x, batch_y)
+                pred_data, batch_x, batch_y,batch_target)
             preds.append(pred.detach().cpu().numpy())
+            trues.append(true.detach().cpu().numpy())
 
-        preds = np.array(preds)
-        preds = preds.reshape(-1, preds.shape[-2], preds.shape[-1])
+        preds = np.squeeze(np.array(preds))
+        trues = np.squeeze(np.array(trues))
+        # 可视化比较
+        plt.figure(figsize=(10, 6))
+        plt.plot(trues, label='True Values', linestyle='--', marker='o')
+        plt.plot(preds, label='Predictions', linestyle='--', marker='o')
+        plt.title('Comparison between True Values and Predictions')
+        plt.xlabel('Time Steps')
+        plt.ylabel('Values')
+        plt.legend()
+        plt.show()
+        # preds = preds.reshape(-1, preds.shape[-2], preds.shape[-1])
+        # trues = trues.reshape(-1, trues.shape[-2], trues.shape[-1])
         
         # result save
         folder_path = './results/' + setting +'/'
@@ -257,6 +272,7 @@ class Exp_Informer(Exp_Basic):
             os.makedirs(folder_path)
         
         np.save(folder_path+'real_prediction.npy', preds)
+        np.save(folder_path + 'real_true.npy', trues)
         
         return
 
@@ -292,12 +308,10 @@ class Exp_Informer(Exp_Basic):
 
         return outputs, batch_y
 
-    def _process_one_batch_noTime(self, dataset_object, batch_x, batch_y):
+    def _process_one_batch_noTime(self, dataset_object, batch_x, batch_y,batch_target):
         batch_x = batch_x.float().to(self.device)
         batch_y = batch_y.float()
-
-
-
+        batch_target=batch_target.float()
         # 构造解码器输入decoder input，如果padding是0，则预测的时序数据全部填充为0，反之为1，再跟作为先验知识的数据进行拼接作为decoder的输入
         if self.args.padding==0:
             dec_inp = torch.zeros([batch_y.shape[0], self.args.pred_len, batch_y.shape[-1]]).float()
@@ -308,17 +322,18 @@ class Exp_Informer(Exp_Basic):
         if self.args.use_amp:
             with torch.cuda.amp.autocast():
                 if self.args.output_attention:
-                    outputs = self.model(batch_x, dec_inp)[0]
+                    pred = self.model(batch_x, dec_inp)[0]
                 else:
-                    outputs = self.model(batch_x, dec_inp)
+                    pred = self.model(batch_x, dec_inp)
         else:
             if self.args.output_attention:
-                outputs = self.model(batch_x, dec_inp)[0]
+                pred = self.model(batch_x, dec_inp)[0]
             else:
-                outputs = self.model(batch_x, dec_inp)
+                pred = self.model(batch_x, dec_inp)
         if self.args.inverse:
-            outputs = dataset_object.inverse_transform(outputs)
+            pred = dataset_object.inverse_transform(pred)
         f_dim = -1 if self.args.features=='MS' else 0
         batch_y = batch_y[:,-self.args.pred_len:,f_dim:].to(self.device)
+        batch_target=batch_target[:,-self.args.pred_len:,:].to(self.device)
 
-        return outputs, batch_y
+        return pred, batch_target
