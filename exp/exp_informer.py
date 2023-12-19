@@ -1,7 +1,7 @@
 from data.data_loader import Dataset_ETT_hour, Dataset_ETT_minute, Dataset_Custom, Dataset_Pred, Dataset_Test, \
-    Dataset_Pred_Test
+    Dataset_Pred_Test, Dataset_RUL
 from exp.exp_basic import Exp_Basic
-from models.model import Informer, InformerStack, Informer_Test
+from models.model import Informer, InformerStack, Informer_Test, Informer_RUL
 
 from utils.tools import EarlyStopping, adjust_learning_rate
 from utils.metrics import metric
@@ -31,9 +31,10 @@ class Exp_Informer(Exp_Basic):
             'informer':Informer,
             'informerstack':InformerStack,
             'informertest': Informer_Test,
+            'informerRUL': Informer_RUL
         }
-        if self.args.model=='informer' or self.args.model=='informerstack' or self.args.model=='informertest':
-            e_layers = self.args.e_layers if self.args.model=='informer' or self.args.model=='informertest' else self.args.s_layers
+        if self.args.model=='informer' or self.args.model=='informerstack' or self.args.model=='informertest' or self.args.model=='informerRUL':
+            e_layers = self.args.e_layers if self.args.model=='informer' or self.args.model=='informertest' or self.args.model=='informerRUL' else self.args.s_layers
             model = model_dict[self.args.model](
                 self.args.enc_in,
                 self.args.dec_in, 
@@ -74,6 +75,7 @@ class Exp_Informer(Exp_Basic):
             'ECL':Dataset_Custom,
             'Solar':Dataset_Custom,
             'custom':Dataset_Custom,
+            'train_FD001': Dataset_RUL
         }
         Data = data_dict[self.args.data]
         timeenc = 0 if args.embed!='timeF' else 1

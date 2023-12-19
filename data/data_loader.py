@@ -594,3 +594,180 @@ class Dataset_Test(Dataset):
         return self.scaler.inverse_transform(data)
 
 
+class Dataset_RUL(Dataset):
+    def __init__(self, root_path, flag='train', size=None,
+                 features='S', data_path='ETTh1.csv',
+                 target='OT', scale=True, inverse=False, timeenc=0, freq='h', cols=None):
+        # size [seq_len, label_len, pred_len]
+        # info
+        if size == None:
+            self.seq_len = 24 * 4 * 4
+            self.label_len = 24 * 4
+            self.pred_len = 24 * 4
+        else:
+            self.seq_len = size[0]
+            self.label_len = size[1]
+            self.pred_len = size[2]
+        # init
+        assert flag in ['train', 'test', 'val']
+        type_map = {'train': 0, 'val': 1, 'test': 2}
+        self.set_type = type_map[flag]
+
+        self.features = features
+        self.target = target
+        self.scale = scale
+        self.inverse = inverse
+        self.timeenc = timeenc
+        self.freq = freq
+        self.cols = cols
+        self.root_path = root_path
+        self.data_path = data_path
+        self.__read_data__()
+
+    def process_targets(self,data_length, early_rul=None):
+        if early_rul == None:
+            return np.arange(data_length - 1, -1, -1)
+        else:
+            early_rul_duration = data_length - early_rul
+            if early_rul_duration <= 0:
+                return np.arange(data_length - 1, -1, -1)
+            else:
+                return np.append(early_rul * np.ones(shape=(early_rul_duration,)), np.arange(early_rul - 1, -1, -1))
+
+
+    # 这个函数名为 process_input_data_with_targets，它接受输入数据 input_data 和目标数据 target_data（可选），并根据指定的窗口长度 window_length 和移动大小 shift 进行处理。
+    def process_input_data_with_targets(self,input_data, target_data=None, window_length=1, shift=1):
+        # 计算 num_batches：根据输入数据的长度、窗口长度和移动大小，计算批次数。num_batches 表示可以从输入数据中提取多少个批次数据。
+        num_batches = np.int(np.floor((len(input_data) - window_length) / shift)) + 1
+        # 获取输入数据的特征数量 num_features：这是输入数据的特征维度。
+        num_features = input_data.shape[1]
+        # 初始化 output_data：创建一个形状为 (num_batches, window_length, num_features) 的NumPy数组，用于存储处理后的数据。初始值为 NaN。
+        output_data = np.repeat(np.nan, repeats=num_batches * window_length * num_features).reshape(num_batches,
+                                                                                                    window_length,
+                                                                                                    num_features)
+        if target_data is None:
+            for batch in range(num_batches):
+                output_data[batch, :, :] = input_data[(0 + shift * batch):(0 + shift * batch + window_length), :]
+            return output_data
+        else:
+            # 初始化 output_targets：创建一个形状为 (num_batches,) 的NumPy数组，用于存储每个批次的目标值。
+            output_targets = np.repeat(np.nan, repeats=num_batches)
+            for batch in range(num_batches):
+                output_data[batch, :, :] = input_data[(0 + shift * batch):(0 + shift * batch + window_length), :]
+                output_targets[batch] = target_data[(shift * batch + (window_length - 1))]
+            return output_data, output_targets
+
+    def __read_data__(self):
+        self.scaler = StandardScaler()
+        data_train = pd.read_csv(os.path.join(self.root_path,
+                                          self.data_path))
+        columns_to_be_dropped = ['unit_ID', 'setting_1', 'setting_2', 'setting_3', 'T2', 'P2', 'P15', 'P30', 'epr','farB', 'Nf_dmd', 'PCNfR_dmd','RUL']
+        train_data_first_column = data_train["unit_ID"]
+        window_length = 30
+        shift = 1
+        early_rul = 125
+        processed_train_data = []
+        processed_train_targets = []
+
+        if self.scale:
+            self.scaler.fit(data_train.drop(columns = columns_to_be_dropped).values)
+            train_data = self.scaler.transform(data_train.drop(columns = columns_to_be_dropped).values)
+            train_data = pd.DataFrame(data=np.c_[train_data_first_column, train_data])
+        else:
+            train_data = data_train.drop(columns = columns_to_be_dropped).values
+
+        num_train_machines = len(train_data[0].unique())
+        # 针对训练数据处理每个发动机
+        for i in np.arange(1, num_train_machines + 1):
+            # 提取属于当前发动机的训练数据并删除 'unit_ID' 列
+            temp_train_data = train_data[train_data[0] == i].drop(columns=[0]).values
+
+            # 确定是否可以提取指定窗口长度的训练数据
+            if len(temp_train_data) < window_length:
+                print("训练发动机 {} 的数据不足以满足窗口长度 {}".format(i, window_length))
+                raise AssertionError("窗口长度大于某些发动机的数据点数量。请尝试减小窗口长度。")
+
+
+            # 处理当前发动机的训练目标
+            temp_train_targets = self.process_targets(data_length=temp_train_data.shape[0], early_rul=early_rul)
+
+            # 使用指定窗口长度和移动大小处理当前发动机的输入数据和目标数据
+            data_for_a_machine, targets_for_a_machine = self.process_input_data_with_targets(temp_train_data,temp_train_targets, window_length=window_length,shift=shift)
+
+            # 将处理后的训练数据和目标数据添加到列表中
+            processed_train_data.append(data_for_a_machine)
+            processed_train_targets.append(targets_for_a_machine)
+
+        # 将处理后的训练数据和目标数据合并为 NumPy 数组
+        processed_train_data = np.concatenate(processed_train_data)
+        processed_train_targets = np.concatenate(processed_train_targets)
+
+        '''
+        df_raw.columns: ['date', ...(other features), target feature]
+        '''
+        # cols = list(df_raw.columns);
+        if self.cols:
+            cols = self.cols.copy()
+            cols.remove(self.target)
+        else:
+            cols = list(df_raw.columns);
+            cols.remove(self.target);
+            cols.remove('date')
+        df_raw = df_raw[['date'] + cols + [self.target]]
+
+        num_train = int(len(df_raw) * 0.7)
+        num_test = int(len(df_raw) * 0.2)
+        num_vali = len(df_raw) - num_train - num_test
+        border1s = [0, num_train - self.seq_len, len(df_raw) - num_test - self.seq_len]
+        border2s = [num_train, num_train + num_vali, len(df_raw)]
+        border1 = border1s[self.set_type]
+        border2 = border2s[self.set_type]
+
+        if self.features == 'M' or self.features == 'MS':
+            cols_data = df_raw.columns[1:]
+            df_data = df_raw[cols_data]
+        elif self.features == 'S':
+            df_data = df_raw[[self.target]]
+
+        if self.scale:
+            train_data = df_data[border1s[0]:border2s[0]]
+            self.scaler.fit(train_data.values)
+            data = self.scaler.transform(df_data.values)
+        else:
+            data = df_data.values
+
+        df_stamp = df_raw[['date']][border1:border2]
+        df_stamp['date'] = pd.to_datetime(df_stamp.date)
+        data_stamp = time_features(df_stamp, timeenc=self.timeenc, freq=self.freq)
+
+        self.data_x = data[border1:border2]
+        if self.inverse:
+            self.data_y = df_data.values[border1:border2]
+        else:
+            self.data_y = data[border1:border2]
+        self.data_stamp = data_stamp
+
+    def __getitem__(self, index):
+        s_begin = index
+        s_end = s_begin + self.seq_len
+        r_begin = s_end - self.label_len
+        r_end = r_begin + self.label_len + self.pred_len
+
+        seq_x = self.data_x[s_begin:s_end]
+        if self.inverse:
+            seq_y = np.concatenate(
+                [self.data_x[r_begin:r_begin + self.label_len], self.data_y[r_begin + self.label_len:r_end]], 0)
+        else:
+            seq_y = self.data_y[r_begin:r_end]
+        seq_x_mark = self.data_stamp[s_begin:s_end]
+        seq_y_mark = self.data_stamp[r_begin:r_end]
+
+        return seq_x, seq_y, seq_x_mark, seq_y_mark
+
+    def __len__(self):
+        return len(self.data_x) - self.seq_len - self.pred_len + 1
+
+    def inverse_transform(self, data):
+        return self.scaler.inverse_transform(data)
+
+

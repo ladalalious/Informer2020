@@ -93,6 +93,7 @@ data_parser = {
     'ECL':{'data':'ECL.csv','T':'MT_320','M':[321,321,321],'S':[1,1,1],'MS':[321,321,1]},
     'Solar':{'data':'solar_AL.csv','T':'POWER_136','M':[137,137,137],'S':[1,1,1],'MS':[137,137,1]},
     'FD001':{'data':'FD001.csv','T':'RUL','M':[137,137,137],'S':[1,1,1],'MS':[137,137,1]},
+    'train_FD001':{'data':'train_FD001.csv','T':'RUL','M':[14,14,14],'S':[1,1,1],'MS':[14,14,1]},
 }
 if args.data in data_parser.keys():
     data_info = data_parser[args.data]
