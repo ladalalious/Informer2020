@@ -702,67 +702,42 @@ class Dataset_RUL(Dataset):
         processed_train_data = np.concatenate(processed_train_data)
         processed_train_targets = np.concatenate(processed_train_targets)
 
-        '''
-        df_raw.columns: ['date', ...(other features), target feature]
-        '''
-        # cols = list(df_raw.columns);
-        if self.cols:
-            cols = self.cols.copy()
-            cols.remove(self.target)
-        else:
-            cols = list(df_raw.columns);
-            cols.remove(self.target);
-            cols.remove('date')
-        df_raw = df_raw[['date'] + cols + [self.target]]
 
-        num_train = int(len(df_raw) * 0.7)
-        num_test = int(len(df_raw) * 0.2)
-        num_vali = len(df_raw) - num_train - num_test
-        border1s = [0, num_train - self.seq_len, len(df_raw) - num_test - self.seq_len]
-        border2s = [num_train, num_train + num_vali, len(df_raw)]
+        num_train = int(processed_train_data.shape[0] * 0.7)
+        num_test = int(processed_train_data.shape[0] * 0.2)
+        num_vali = processed_train_data.shape[0] - num_train - num_test
+        border1s = [0, num_train, num_train + num_vali]
+        border2s = [num_train, num_train + num_vali, processed_train_data.shape[0]]
         border1 = border1s[self.set_type]
         border2 = border2s[self.set_type]
 
-        if self.features == 'M' or self.features == 'MS':
-            cols_data = df_raw.columns[1:]
-            df_data = df_raw[cols_data]
-        elif self.features == 'S':
-            df_data = df_raw[[self.target]]
 
-        if self.scale:
-            train_data = df_data[border1s[0]:border2s[0]]
-            self.scaler.fit(train_data.values)
-            data = self.scaler.transform(df_data.values)
-        else:
-            data = df_data.values
 
-        df_stamp = df_raw[['date']][border1:border2]
-        df_stamp['date'] = pd.to_datetime(df_stamp.date)
-        data_stamp = time_features(df_stamp, timeenc=self.timeenc, freq=self.freq)
 
-        self.data_x = data[border1:border2]
+        self.data_x = processed_train_data[border1:border2]
         if self.inverse:
-            self.data_y = df_data.values[border1:border2]
+            self.data_y = processed_train_data.values[border1:border2]
         else:
-            self.data_y = data[border1:border2]
-        self.data_stamp = data_stamp
+            self.data_y = processed_train_data[border1:border2]
+
+        self.data_target = processed_train_targets[border1:border2]
+
 
     def __getitem__(self, index):
-        s_begin = index
-        s_end = s_begin + self.seq_len
-        r_begin = s_end - self.label_len
-        r_end = r_begin + self.label_len + self.pred_len
 
-        seq_x = self.data_x[s_begin:s_end]
-        if self.inverse:
-            seq_y = np.concatenate(
-                [self.data_x[r_begin:r_begin + self.label_len], self.data_y[r_begin + self.label_len:r_end]], 0)
-        else:
-            seq_y = self.data_y[r_begin:r_end]
-        seq_x_mark = self.data_stamp[s_begin:s_end]
-        seq_y_mark = self.data_stamp[r_begin:r_end]
+        #获取数据
+        seq_x = self.data_x[index]
+        # 提取最后10个步长的数据
+        seq_y = seq_x[-10:, :]
 
-        return seq_x, seq_y, seq_x_mark, seq_y_mark
+        # 在最后添加预测长度数量的零数据
+        zero_padding = np.zeros((self.pred_len, 14))
+
+        # 合并数据
+        seq_y = np.concatenate([seq_y, zero_padding], axis=0)
+
+        seq_target = self.data_target[index]
+        return seq_x, seq_y, seq_target
 
     def __len__(self):
         return len(self.data_x) - self.seq_len - self.pred_len + 1

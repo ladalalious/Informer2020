@@ -121,7 +121,7 @@ class Exp_Informer(Exp_Basic):
         self.model.eval()
         total_loss = []
         for i, (batch_x,batch_y,batch_target) in enumerate(vali_loader):
-            pred, true = self._process_one_batch_noTime(
+            pred, true = self._process_one_batch_noTime_RUL(
                 vali_data, batch_x, batch_y,batch_target)
             loss = criterion(pred.detach().cpu(), true.detach().cpu())
             total_loss.append(loss)
@@ -160,7 +160,7 @@ class Exp_Informer(Exp_Basic):
                 iter_count += 1
                 
                 model_optim.zero_grad()
-                pred, true = self._process_one_batch_noTime(
+                pred, true = self._process_one_batch_noTime_RUL(
                     train_data, batch_x, batch_y,batch_target)
                 loss = criterion(pred, true)
                 train_loss.append(loss.item())
@@ -209,7 +209,7 @@ class Exp_Informer(Exp_Basic):
         trues = []
         
         for i, (batch_x,batch_y,batch_target) in enumerate(test_loader):
-            pred, true = self._process_one_batch_noTime(
+            pred, true = self._process_one_batch_noTime_RUL(
                 test_data, batch_x, batch_y,batch_target)
             preds.append(pred.detach().cpu().numpy())
             trues.append(true.detach().cpu().numpy())
@@ -249,7 +249,7 @@ class Exp_Informer(Exp_Basic):
         trues=[]
         
         for i, (batch_x,batch_y,batch_target) in enumerate(pred_loader):
-            pred, true = self._process_one_batch_noTime(
+            pred, true = self._process_one_batch_noTime_RUL(
                 pred_data, batch_x, batch_y,batch_target)
             preds.append(pred.detach().cpu().numpy())
             trues.append(true.detach().cpu().numpy())
@@ -337,5 +337,34 @@ class Exp_Informer(Exp_Basic):
         f_dim = -1 if self.args.features=='MS' else 0
         batch_y = batch_y[:,-self.args.pred_len:,f_dim:].to(self.device)
         batch_target=batch_target[:,-self.args.pred_len:,:].to(self.device)
+
+        return pred, batch_target
+
+    def _process_one_batch_noTime_RUL(self, dataset_object, batch_x, batch_y,batch_target):
+        batch_x = batch_x.float().to(self.device)
+        batch_y = batch_y.float()
+        batch_target=batch_target.float()
+        # 构造解码器输入decoder input，如果padding是0，则预测的时序数据全部填充为0，反之为1，再跟作为先验知识的数据进行拼接作为decoder的输入
+        if self.args.padding==0:
+            dec_inp = torch.zeros([batch_y.shape[0], self.args.pred_len, batch_y.shape[-1]]).float()
+        elif self.args.padding==1:
+            dec_inp = torch.ones([batch_y.shape[0], self.args.pred_len, batch_y.shape[-1]]).float()
+        dec_inp = torch.cat([batch_y[:,:self.args.label_len,:], dec_inp], dim=1).float().to(self.device)
+        # encoder - decoder
+        if self.args.use_amp:
+            with torch.cuda.amp.autocast():
+                if self.args.output_attention:
+                    pred = self.model(batch_x, dec_inp)[0]
+                else:
+                    pred = self.model(batch_x, dec_inp)
+        else:
+            if self.args.output_attention:
+                pred = self.model(batch_x, dec_inp)[0]
+            else:
+                pred = self.model(batch_x, dec_inp)
+        if self.args.inverse:
+            pred = dataset_object.inverse_transform(pred)
+        f_dim = -1 if self.args.features=='MS' else 0
+
 
         return pred, batch_target
